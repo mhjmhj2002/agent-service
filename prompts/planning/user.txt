@@ -1,0 +1,22 @@
+[TASK]
+Create an implementation plan.
+
+[INPUT]
+Title: {title}
+Description: {body}
+
+[OUTPUT FORMAT - STRICT]
+Return ONLY valid JSON following this structure:
+
+{{
+  "steps": [
+    {{
+      "id": 1,
+      "type": "controller",
+      "name": "UserController",
+      "description": "Create GET /users endpoint"
+    }}
+  ]
+}}
+
+Do not include explanations. Do not include markdown.
