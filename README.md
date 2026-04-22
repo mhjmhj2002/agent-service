@@ -8,11 +8,11 @@ An experimental agent-based system that processes GitHub issues and generates st
 
 This project simulates an autonomous software agent capable of:
 
-* Reading GitHub issues
-* Deciding execution flow
-* Generating structured implementation plans via AI
-* Posting results back to GitHub
-* Managing execution state to avoid duplication
+- Reading GitHub issues
+- Deciding execution flow
+- Generating structured implementation plans via AI
+- Posting results back to GitHub
+- Managing execution state to avoid duplication
 
 ---
 
@@ -21,28 +21,37 @@ This project simulates an autonomous software agent capable of:
 ```
 agent_service/
 ├── engine/
-│   ├── agent_engine.py      # Core orchestration logic
-│   ├── planner.py           # AI integration (OpenAI)
-│   ├── state_manager.py     # Execution state control
-│   ├── schema_validator.py  # JSON validation
-│   ├── plan_normalizer.py   # AI output normalization
-│   └── prompt_loader.py     # External prompt loader
+│   ├── agent_engine.py
+│   ├── planner.py
+│   ├── state_manager.py
+│   ├── schema_validator.py
+│   ├── plan_normalizer.py
+│   ├── prompt_loader.py
+│   ├── scope_guard.py
+│   ├── label_manager.py
+│   └── pr_guard.py
 │
 ├── adapters/
-│   └── github_adapter.py    # GitHub API integration
+│   ├── github_adapter.py
+│   └── github_pr.py
 │
 ├── entrypoints/
-│   └── event_runner.py      # Local event simulation
+│   └── event_runner.py
 │
 ├── prompts/
 │   └── planning/
-│       ├── system.txt       # System prompt (AI behavior)
-│       └── user.txt         # User prompt template
+│       ├── system.txt
+│       └── user.txt
 │
 ├── schemas/
-│   └── plan_schema.json     # Output contract
+│   └── plan_schema.json
 │
-└── .env                     # Environment variables
+├── state/
+│   └── *.json
+│
+├── .env
+├── .env.example
+└── requirements.txt
 ```
 
 ---
@@ -50,13 +59,18 @@ agent_service/
 ## 🔁 Workflow
 
 1. Load GitHub issue
-2. Check execution state
-3. Apply label (`in-progress`)
-4. Post initial comment
-5. Generate plan using AI
-6. Normalize and validate output
-7. Post structured JSON plan
-8. Update execution state
+2. Validate execution state
+3. Apply guards:
+   - Scope (CRUD only)
+   - Concurrency (labels)
+   - PR duplication
+4. Move to `in-progress`
+5. Generate plan via AI
+6. Validate JSON output (schema)
+7. Post plan as comment
+8. Create branch + PR (future step)
+9. Update state (`DONE`, `REJECTED`)
+10. Sync labels with GitHub
 
 ---
 
@@ -79,45 +93,28 @@ agent_service/
 
 ## 🔐 Design Principles
 
-* Deterministic execution
-* Idempotent operations
-* AI output validation (schema-based)
-* Separation of concerns
-* Prompt externalization
-* Fail-fast error handling
+- Deterministic execution
+- Idempotent operations
+- Schema validation for AI output
+- Separation of concerns
+- Externalized prompts
+- Fail-fast error handling
 
 ---
 
 ## 🧪 Current Capabilities
 
-* GitHub issue ingestion
-* AI-based plan generation
-* JSON schema validation
-* Output normalization
-* State management
-* Local event simulation
+- GitHub issue ingestion
+- Scope validation (CRUD-only)
+- AI-based plan generation
+- JSON schema validation
+- Output normalization
+- State persistence (JSON)
+- Label synchronization
+- Duplicate PR prevention
+- Local event simulation
 
 ---
-
-## 🚧 Next Steps
-
-* Execute plan steps automatically
-* Generate code artifacts (Java/Spring Boot)
-* Introduce retry strategies for AI failures
-* Add multi-agent coordination
-* Integrate with CI/CD pipelines
-
----
-
-## ⚠️ Disclaimer
-
-This project is experimental and intended for learning and architectural exploration of agent-based systems.
-
----
-
-## 👨‍💻 Author
-
-Study project focused on autonomous agents, AI orchestration, and backend architecture.
 
 ## ⚙️ Setup & Configuration
 
@@ -130,11 +127,24 @@ cd agent-service
 
 ---
 
-### 2. Create your environment file
+### 2. Create virtual environment
 
-This project uses environment variables for configuration.
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
 
-A template file is provided:
+---
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 4. Create your environment file
 
 ```bash
 cp .env.example .env
@@ -142,9 +152,9 @@ cp .env.example .env
 
 ---
 
-### 3. Configure your `.env`
+### 5. Configure your `.env`
 
-Open the `.env` file and fill in your credentials:
+Edit the `.env` file:
 
 ```env
 GITHUB_TOKEN=your_github_token
@@ -161,23 +171,7 @@ ENVIRONMENT=dev
 
 ---
 
-### ⚠️ Important
-
-* The `.env` file is **NOT committed** to the repository
-* Never expose your tokens or API keys
-* The `.env.example` file is only a template
-
----
-
-### 4. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-### 5. Run the project
+### 6. Run the project
 
 ```bash
 python3 -m entrypoints.event_runner
@@ -185,25 +179,130 @@ python3 -m entrypoints.event_runner
 
 ---
 
-### 🧪 Expected Behavior
+## 🔄 Updating Dependencies (IMPORTANT)
+
+If you install new libraries during development, update the dependency list:
+
+```bash
+pip freeze > requirements.txt
+```
+
+This ensures the project runs correctly on any machine.
+
+---
+
+## 🧪 Expected Behavior
 
 When running, the agent will:
 
-* Load a GitHub issue
-* Apply the `in-progress` label
-* Post a start comment
-* Generate an implementation plan using AI
-* Post the plan as structured JSON
+- Load a GitHub issue
+- Apply the `in-progress` label
+- Post a start comment
+- Generate an implementation plan using AI
+- Post the plan as structured JSON
 
 ---
 
-### 🔍 Debug Tips
+## 🔍 Debug Tips
 
 If something fails:
 
-* Check if `.env` is properly filled
-* Verify your GitHub token permissions
-* Ensure `OPENAI_API_KEY` is valid
-* Enable debug logs (`DEBUG=true`)
+- Check if `.env` is properly configured
+- Verify GitHub token permissions
+- Ensure `OPENAI_API_KEY` is valid
+- Activate virtual environment (`source venv/bin/activate`)
+- Reinstall dependencies if needed:
+
+```bash
+pip install -r requirements.txt --upgrade
+```
+---
+
+## ⚠️ Important
+
+- `.env` is NOT versioned
+- Never commit tokens or API keys
+- `.env.example` is only a template
 
 ---
+
+## ▶️ Running the Project
+
+```bash
+python3 -m entrypoints.event_runner
+```
+
+---
+
+## 🧪 Expected Behavior
+
+When executed, the agent will:
+
+- Read a GitHub issue
+- Validate scope (CRUD only)
+- Apply `in-progress` label
+- Generate an AI plan
+- Post structured JSON
+- Update execution state
+- Prevent duplicate runs
+
+---
+
+## 🚫 Scope Limitation (v1)
+
+This version only supports CRUD-based issues:
+
+### ✅ Supported
+
+- Create endpoint
+- List resources
+- Update entity
+- Delete entity
+
+### ❌ Not Supported
+
+- AWS integrations (SQS, SNS, etc.)
+- Messaging systems
+- Complex workflows
+- External APIs
+
+Out-of-scope issues are automatically rejected.
+
+---
+
+## 🔍 Debug Tips
+
+If something fails:
+
+- Check `.env` configuration
+- Validate GitHub token permissions
+- Ensure OpenAI API key is valid
+- Enable debug logs (`DEBUG=true`)
+
+---
+
+## 🚧 Next Steps
+
+- Code generation (Spring Boot / Java)
+- Automatic branch creation
+- Pull request generation
+- Test generation
+- CI/CD integration
+- Multi-agent orchestration
+
+---
+
+## ⚠️ Disclaimer
+
+This project is experimental and intended for learning and architectural exploration of agent-based systems.
+
+---
+
+## 👨‍💻 Author
+
+Study project focused on:
+
+- Agentic AI
+- Backend architecture
+- Autonomous systems
+- Dev automation
