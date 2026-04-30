@@ -9,6 +9,9 @@ def sync_labels_with_state(repo, issue_number, state, current_labels):
     status_label_map = {
         "IN_PROGRESS": "in-progress",
         "PLANNED": "planned",
+        "PLANNING": "planning",
+        "WAITING_APPROVAL": "awaiting-approval",
+        "APPROVED": "approved",
         "DONE": "done",
         "REJECTED": "rejected"
     }

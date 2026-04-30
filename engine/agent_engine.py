@@ -9,7 +9,8 @@ from engine.pr_guard import has_existing_pr
 from adapters.github_adapter import (
     add_label,
     comment_on_issue,
-    get_issue_labels
+    get_issue_labels,
+    get_issue_comments
 )
 
 from adapters.github_pr import (
@@ -19,17 +20,29 @@ from adapters.github_pr import (
 )
 
 
+def check_approval(issue_number, repo):
+    comments = get_issue_comments(issue_number, repo)
+
+    if not comments:
+        return None
+
+    last_comment = comments[-1]["body"].lower()
+
+    if "approve plan" in last_comment:
+        return "approved"
+
+    if "reject plan" in last_comment:
+        return "rejected"
+
+    return None
+
+
 def process_issue(issue):
 
     repo = issue["repo"]
     issue_number = issue["number"]
 
     print("\n----- AGENT ENGINE -----")
-
-    # 🔥 PR DUPLICATE GUARD (antes de tudo)
-    if has_existing_pr(repo, issue_number):
-        print("⚠️ PR já existe para essa issue. Abortando execução.")
-        return
 
     # =========================
     # 1. VALIDATE INPUT
@@ -38,16 +51,19 @@ def process_issue(issue):
         raise Exception("Invalid issue payload")
 
     # =========================
-    # 2. GUARDS (GitHub + State)
+    # 2. PR DUPLICATE GUARD
+    # =========================
+    if has_existing_pr(repo, issue_number):
+        print("⚠️ PR já existe para essa issue. Abortando execução.")
+        return
+
+    # =========================
+    # 3. LOAD STATE + LABELS
     # =========================
     labels = get_issue_labels(issue_number, repo)
     state = get_state(repo, issue_number)
 
     print(f"State inicial: {state['status']}")
-
-    if "in-progress" in labels:
-        print("⚠️ Issue já está em progresso. Abortando execução.")
-        return
 
     if "rejected" in labels:
         print("⚠️ Issue já foi rejeitada. Ignorando.")
@@ -58,25 +74,24 @@ def process_issue(issue):
         return
 
     # =========================
-    # 3. STATE INIT
+    # 4. STATE INIT
     # =========================
     if state["status"] == "NEW":
-        update_state(repo, issue_number, status="IN_PROGRESS")
+        print("🚀 Inicializando planejamento")
 
-        add_label(issue_number, repo, "in-progress")
-        comment_on_issue(issue_number, repo, "Agent started")
+        update_state(repo, issue_number, status="PLANNING")
 
-        update_state(
-            repo,
+        comment_on_issue(
             issue_number,
-            steps={"label_applied": True, "comment_added": True}
+            repo,
+            "🤖 Agent started - generating development plan..."
         )
 
     # reload state
     state = get_state(repo, issue_number)
 
     # =========================
-    # 4. SCOPE VALIDATION
+    # 5. SCOPE VALIDATION
     # =========================
     if not is_crud_issue(issue["title"], issue.get("body", "")):
         comment_on_issue(issue_number, repo, reject_reason())
@@ -87,36 +102,85 @@ def process_issue(issue):
         return
 
     # =========================
-    # 5. PLAN (IA)
+    # 6. PLAN GENERATION
     # =========================
-    if not state["steps"]["plan_generated"]:
-        print("Gerando plano...")
+    if not state.get("steps", {}).get("plan_generated"):
+        print("🧠 Gerando plano...")
 
         plan = generate_plan(issue["title"], issue.get("body", ""))
-        plan["steps"] = sorted(plan["steps"], key=lambda x: x["id"])
 
-        comment_on_issue(
-            issue_number,
-            repo,
-            f"🧠 PLAN:\n\n```json\n{json.dumps(plan, indent=2)}\n```"
+        if isinstance(plan, dict) and "steps" in plan:
+            plan["steps"] = sorted(plan["steps"], key=lambda x: x.get("id", 0))
+
+        # ⚠️ sem markdown com ``` pra não quebrar string
+        comment_body = (
+            "## 🤖 AI Development Plan\n\n"
+            "JSON Plan:\n\n"
+            f"{json.dumps(plan, indent=2)}\n\n"
+            "---\n\n"
+            "### ⏳ Awaiting approval\n\n"
+            "Reply with:\n"
+            "- approve plan\n"
+            "- reject plan\n"
         )
 
-        update_state(repo, issue_number, steps={"plan_generated": True})
-        update_state(repo, issue_number, status="PLANNED")
+        comment_on_issue(issue_number, repo, comment_body)
+
+        update_state(
+            repo,
+            issue_number,
+            status="WAITING_APPROVAL",
+            steps={"plan_generated": True}
+        )
+
+        return  # ⛔ PARA AQUI
 
     # reload state
     state = get_state(repo, issue_number)
 
     # =========================
-    # 6. EXECUTE (PR FLOW)
+    # 7. APPROVAL STEP
     # =========================
-    if state["status"] == "PLANNED":
-        print("🚀 Criando PR...")
+    if state["status"] == "WAITING_APPROVAL":
+        print("⏳ Aguardando aprovação do plano...")
+
+        decision = check_approval(issue_number, repo)
+
+        if decision == "approved":
+            print("✅ Plano aprovado")
+
+            update_state(repo, issue_number, status="APPROVED")
+
+            comment_on_issue(
+                issue_number,
+                repo,
+                "✅ Plan approved. Starting execution..."
+            )
+
+        elif decision == "rejected":
+            print("❌ Plano rejeitado")
+
+            update_state(repo, issue_number, status="REJECTED")
+
+            comment_on_issue(
+                issue_number,
+                repo,
+                "❌ Plan rejected by user."
+            )
+
+        return
+
+    # =========================
+    # 8. EXECUTION (PR FLOW)
+    # =========================
+    if state["status"] == "APPROVED":
+        print("🚀 Executando plano e criando PR...")
 
         branch_name = f"feature/issue-{issue_number}"
 
         create_branch(repo, branch_name)
 
+        # por enquanto só salva o plano (próximo passo = gerar código)
         plan = generate_plan(issue["title"], issue.get("body", ""))
 
         create_file(
@@ -139,7 +203,7 @@ def process_issue(issue):
         update_state(repo, issue_number, status="DONE")
 
     # =========================
-    # 7. SYNC
+    # 9. SYNC LABELS
     # =========================
     state = get_state(repo, issue_number)
 

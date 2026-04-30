@@ -8,11 +8,11 @@ An experimental agent-based system that processes GitHub issues and generates st
 
 This project simulates an autonomous software agent capable of:
 
-- Reading GitHub issues
-- Deciding execution flow
-- Generating structured implementation plans via AI
-- Posting results back to GitHub
-- Managing execution state to avoid duplication
+* Reading GitHub issues
+* Deciding execution flow
+* Generating structured implementation plans via AI
+* Posting results back to GitHub
+* Managing execution state to avoid duplication
 
 ---
 
@@ -36,18 +36,15 @@ agent_service/
 │   └── github_pr.py
 │
 ├── entrypoints/
-│   └── event_runner.py
+│   ├── event_runner.py
+│   └── webhook_server.py
 │
 ├── prompts/
 │   └── planning/
-│       ├── system.txt
-│       └── user.txt
 │
 ├── schemas/
-│   └── plan_schema.json
 │
 ├── state/
-│   └── *.json
 │
 ├── .env
 ├── .env.example
@@ -56,69 +53,165 @@ agent_service/
 
 ---
 
-## 🔁 Workflow
+## 🔁 Workflow (Atual)
 
-1. Load GitHub issue
-2. Validate execution state
-3. Apply guards:
-   - Scope (CRUD only)
-   - Concurrency (labels)
-   - PR duplication
-4. Move to `in-progress`
-5. Generate plan via AI
-6. Validate JSON output (schema)
-7. Post plan as comment
-8. Create branch + PR (future step)
-9. Update state (`DONE`, `REJECTED`)
-10. Sync labels with GitHub
+1. GitHub dispara evento
+2. Webhook recebe evento
+3. Filtro por tipo (`issues`, `issue_comment`)
+4. Agent engine processa:
+
+    * valida estado
+    * valida escopo (CRUD)
+    * gera plano com IA
+5. Aguarda aprovação humana
+6. Dev responde:
+
+    * `approve plan`
+    * `reject plan`
+7. Agent continua fluxo
 
 ---
 
-## 📦 Example Output
+## 🌐 Webhook Setup (GitHub + ngrok)
 
-```json
-{
-  "steps": [
-    {
-      "id": 1,
-      "type": "controller",
-      "name": "UserController",
-      "description": "Create GET /users endpoint"
-    }
-  ]
-}
+> ⚠️ ESSENCIAL para funcionamento real (sem simulação)
+
+---
+
+### 1. Subir servidor webhook
+
+```bash
+python3 -m entrypoints.webhook_server
+```
+
+Servidor roda em:
+
+```
+http://localhost:5000/webhook
 ```
 
 ---
 
-## 🔐 Design Principles
+### 2. Expor com ngrok
 
-- Deterministic execution
-- Idempotent operations
-- Schema validation for AI output
-- Separation of concerns
-- Externalized prompts
-- Fail-fast error handling
+Instalar:
+
+```bash
+sudo snap install ngrok
+```
+
+Criar conta:
+https://dashboard.ngrok.com/signup
+
+Configurar token:
+
+```bash
+ngrok config add-authtoken SEU_TOKEN
+```
+
+Subir túnel:
+
+```bash
+ngrok http 5000
+```
+
+Você vai receber algo como:
+
+```
+https://xxxxx.ngrok-free.dev
+```
 
 ---
 
-## 🧪 Current Capabilities
+### 3. Configurar webhook no GitHub
 
-- GitHub issue ingestion
-- Scope validation (CRUD-only)
-- AI-based plan generation
-- JSON schema validation
-- Output normalization
-- State persistence (JSON)
-- Label synchronization
-- Duplicate PR prevention
-- Local event simulation
+No repositório:
+
+```
+Settings → Webhooks → Add webhook
+```
+
+Configurar:
+
+* **Payload URL**
+
+```
+https://SEU-NGROK/webhook
+```
+
+* **Content type**
+
+```
+application/json
+```
+
+* **Events**
+  Selecionar:
+* Issues
+* Issue comments
+
+Salvar.
+
+---
+
+## 🔥 Importante (evitar bugs)
+
+### ✅ Filtros implementados
+
+O sistema evita problemas comuns de webhook:
+
+* execução duplicada
+* loop infinito (bot chamando ele mesmo)
+* eventos irrelevantes
+
+### 🧠 Regras
+
+* Só processa:
+
+    * `issues.opened`
+    * `issue_comment.created`
+* Ignora:
+
+    * comentários do próprio bot
+    * comentários sem comando (`approve plan`, `reject plan`)
+
+---
+
+## 🧪 Fluxo Real (End-to-End)
+
+1. Criar issue no GitHub:
+
+```
+Criar endpoint POST /clientes
+```
+
+---
+
+2. Sistema responde automaticamente:
+
+* adiciona comentário
+* gera plano com IA
+
+---
+
+3. Dev aprova:
+
+```
+approve plan
+```
+
+---
+
+4. Sistema:
+
+* detecta aprovação
+* continua execução
 
 ---
 
 ## ⚙️ Setup & Configuration
 
-### 1. Clone the repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/your-user/agent-service.git
@@ -127,7 +220,7 @@ cd agent-service
 
 ---
 
-### 2. Create virtual environment
+### 2. Virtual env
 
 ```bash
 python3 -m venv venv
@@ -136,7 +229,7 @@ source venv/bin/activate
 
 ---
 
-### 3. Install dependencies
+### 3. Instalar deps
 
 ```bash
 pip install -r requirements.txt
@@ -144,34 +237,27 @@ pip install -r requirements.txt
 
 ---
 
-### 4. Create your environment file
+### 4. .env
 
 ```bash
 cp .env.example .env
 ```
 
----
-
-### 5. Configure your `.env`
-
-Edit the `.env` file:
+Editar:
 
 ```env
 GITHUB_TOKEN=your_github_token
 GITHUB_OWNER=your_username
-GITHUB_REPOS=agentic-ia-web-api,agentic-ia-ms-user,agentic-ia-ms-order
 
 OPENAI_API_KEY=your_openai_key
 OPENAI_MODEL=gpt-4o-mini
-
-DEBUG=true
-DRY_RUN=false
-ENVIRONMENT=dev
 ```
 
 ---
 
-### 6. Run the project
+## ▶️ Execução
+
+### 🔹 Modo simulado
 
 ```bash
 python3 -m entrypoints.event_runner
@@ -179,122 +265,65 @@ python3 -m entrypoints.event_runner
 
 ---
 
-## 🔄 Updating Dependencies (IMPORTANT)
-
-If you install new libraries during development, update the dependency list:
+### 🔹 Modo real
 
 ```bash
-pip freeze > requirements.txt
+python3 -m entrypoints.webhook_server
 ```
 
-This ensures the project runs correctly on any machine.
+* ngrok ativo
 
 ---
 
 ## 🧪 Expected Behavior
 
-When running, the agent will:
-
-- Load a GitHub issue
-- Apply the `in-progress` label
-- Post a start comment
-- Generate an implementation plan using AI
-- Post the plan as structured JSON
-
----
-
-## 🔍 Debug Tips
-
-If something fails:
-
-- Check if `.env` is properly configured
-- Verify GitHub token permissions
-- Ensure `OPENAI_API_KEY` is valid
-- Activate virtual environment (`source venv/bin/activate`)
-- Reinstall dependencies if needed:
-
-```bash
-pip install -r requirements.txt --upgrade
-```
----
-
-## ⚠️ Important
-
-- `.env` is NOT versioned
-- Never commit tokens or API keys
-- `.env.example` is only a template
-
----
-
-## ▶️ Running the Project
-
-```bash
-python3 -m entrypoints.event_runner
-```
-
----
-
-## 🧪 Expected Behavior
-
-When executed, the agent will:
-
-- Read a GitHub issue
-- Validate scope (CRUD only)
-- Apply `in-progress` label
-- Generate an AI plan
-- Post structured JSON
-- Update execution state
-- Prevent duplicate runs
+* Issue criada → plano gerado automaticamente
+* Comentário `approve plan` → continua fluxo
+* Sem duplicação
+* Sem loops
 
 ---
 
 ## 🚫 Scope Limitation (v1)
 
-This version only supports CRUD-based issues:
+### ✅ Suportado
 
-### ✅ Supported
+* CRUD APIs
+* Controllers / Services / Repositories
 
-- Create endpoint
-- List resources
-- Update entity
-- Delete entity
+### ❌ Não suportado
 
-### ❌ Not Supported
-
-- AWS integrations (SQS, SNS, etc.)
-- Messaging systems
-- Complex workflows
-- External APIs
-
-Out-of-scope issues are automatically rejected.
+* Integrações externas
+* Mensageria
+* Workflows complexos
 
 ---
 
-## 🔍 Debug Tips
+## 🧠 Design Principles
 
-If something fails:
-
-- Check `.env` configuration
-- Validate GitHub token permissions
-- Ensure OpenAI API key is valid
-- Enable debug logs (`DEBUG=true`)
+* Idempotência
+* Event-driven
+* State-driven execution
+* Guard rails
+* AI com validação de schema
 
 ---
 
 ## 🚧 Next Steps
 
-- Code generation (Spring Boot / Java)
-- Automatic branch creation
-- Pull request generation
-- Test generation
-- CI/CD integration
-- Multi-agent orchestration
+* Atualizar `pom.xml` automaticamente
+* Gerar código Spring Boot
+* Criar PR automático
+* Testes automatizados
+* Multi-agent orchestration
 
 ---
 
-## ⚠️ Disclaimer
+## ⚠️ Important
 
-This project is experimental and intended for learning and architectural exploration of agent-based systems.
+* Nunca versionar `.env`
+* Tokens são sensíveis
+* ngrok URL muda a cada execução (free)
 
 ---
 
@@ -302,7 +331,7 @@ This project is experimental and intended for learning and architectural explora
 
 Study project focused on:
 
-- Agentic AI
-- Backend architecture
-- Autonomous systems
-- Dev automation
+* Agentic AI
+* Backend architecture
+* Dev automation
+* Autonomous systems
